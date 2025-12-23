@@ -1,0 +1,352 @@
+<!--
+  白金豪华版AI生活助理（独立HTML桌面应用）
+  设计：为80岁用户打造超大字号、高对比度、极简操作，多标签页包含：我的笔记、待办事项、与AI聊天；右上角番茄钟。
+  说明：双击本文件即可在浏览器打开使用，无需安装任何依赖。数据保存在浏览器本地（localStorage）。
+  AI相关：请在下方“API_KEY”处填入您的密钥。
+  【请在此处填入您的API密钥】
+-->
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>白金豪华版AI生活助理</title>
+  <style>
+    :root {
+      --bg: #fff5f8; --fg: #1a1a1a; --accent: #e91e63; --btn: #ffffff;
+    }
+    html, body { background: var(--bg); color: var(--fg); font-family: system-ui, sans-serif; }
+    .container { max-width: 1200px; margin: 0 auto; padding: 16px; }
+    .title { font-size: 48px; font-weight: 900; color: var(--accent); }
+    .topbar { display:flex; align-items:center; justify-content:space-between; }
+    .tabs { display:flex; gap: 12px; margin: 16px 0; }
+    .tab { font-size: 28px; padding: 12px 18px; border: 3px solid var(--accent); border-radius: 12px; background: var(--btn); color: var(--fg); cursor: pointer; }
+    .tab.active { background: #ffe6ef; box-shadow: 0 0 0 2px rgba(233,30,99,0.35) inset; }
+    .btn { font-size: 28px; padding: 12px 18px; border: 3px solid var(--accent); border-radius: 12px; background: var(--btn); color: var(--fg); cursor: pointer; }
+    .input, .textarea, select { font-size: 24px; padding: 12px; width: 100%; border: 3px solid var(--accent); border-radius: 12px; box-sizing: border-box; background: #ffffff; color: var(--fg); }
+    .textarea { min-height: 160px; }
+    .grid { display:grid; gap:16px; }
+    .cols-3 { grid-template-columns: 1fr 1.2fr 2fr; }
+    .section-title { font-size: 28px; font-weight: 800; margin: 8px 0; }
+    .item { font-size: 24px; padding:8px 12px; border-bottom: 2px solid var(--accent); }
+    .row { display:flex; gap:12px; align-items:center; }
+    .chat { margin-top: 8px; }
+    .bubble-user { background:#ffffff; border:3px solid var(--accent); border-radius:16px; padding:16px; margin:8px 0; font-size:24px; }
+    .bubble-ai { background:#fff0f5; border:3px solid var(--accent); border-radius:16px; padding:16px; margin:8px 0; font-size:24px; }
+    .right { text-align:right; }
+    .strike { text-decoration: line-through; }
+    .hidden { display:none; }
+
+    .page-bg { position: fixed; inset:0; z-index:0; background: linear-gradient(270deg, #fff5f8, #ffe6ef, #ffd6e7, #fff5f8); background-size:800% 800%; animation: flow 24s ease infinite; }
+    .page-bg::after { content:""; position:absolute; inset:0; background: radial-gradient(600px 300px at 20% 25%, rgba(233,30,99,0.10), transparent 60%), radial-gradient(700px 350px at 80% 70%, rgba(255,255,255,0.14), transparent 60%); filter: blur(30px); }
+    .container { position: relative; z-index: 1; }
+
+    /* 幻彩番茄钟全屏背景 */
+    .holo-bg { position: fixed; inset:0; z-index: 9999; background: linear-gradient(270deg, #fff5f8, #ffe6ef, #ffd6e7, #ffffff, #ffe6ef, #fff5f8); background-size:800% 800%; animation: flow 12s ease infinite; }
+    @keyframes flow { 0%{background-position:0% 50%} 50%{background-position:100% 50%} 100%{background-position:0% 50%} }
+    .holo-center { position:absolute; top:50%; left:50%; transform:translate(-50%, -50%); text-align:center; }
+    .holo-time { font-size: 120px; font-weight: 900; color: var(--accent); text-shadow: 0 0 12px rgba(233,30,99,0.35); }
+    .holo-controls { margin-top: 24px; }
+  </style>
+</head>
+<body>
+  <div class="page-bg"></div>
+  <div class="container">
+    <div class="topbar">
+      <div class="title">白金豪华版AI生活助理</div>
+      <div class="row">
+        <button id="focusBtn" class="btn">开始专注</button>
+        <select id="model" class="input" style="width:320px">
+          <option value="gpt-4o-mini">gpt-4o-mini（推荐）</option>
+          <option value="gpt-4o">gpt-4o</option>
+          <option value="gpt-3.5-turbo">gpt-3.5-turbo</option>
+        </select>
+      </div>
+    </div>
+
+    <div class="row" style="margin:8px 0">
+      <input id="apiKey" class="input" placeholder="在此填入您的OpenAI API Key（仅保存在本地）" />
+    </div>
+
+    <div class="tabs">
+      <div id="tab-notes" class="tab active">我的笔记</div>
+      <div id="tab-todo" class="tab">待办事项</div>
+      <div id="tab-chat" class="tab">与AI聊天</div>
+    </div>
+
+    <div id="view-notes">
+      <div class="section-title">在这里直接提问：例如“我上次记录的那个血压值是多少？”</div>
+      <div class="row">
+        <input id="notesQuestion" class="input" placeholder="请输入您的问题（AI将检索全部笔记）" />
+        <button id="askNotes" class="btn">AI立即回答</button>
+      </div>
+      <div id="notesAnswer" class="bubble-ai hidden"></div>
+
+      <div class="grid cols-3" style="margin-top: 12px">
+        <div>
+          <div class="section-title">分类列表</div>
+          <select id="categorySelect" class="input"></select>
+          <input id="newCategory" class="input" placeholder="新分类名称" />
+          <button id="addCategory" class="btn">添加分类</button>
+        </div>
+        <div>
+          <div class="section-title">笔记列表</div>
+          <div id="notesList"></div>
+          <hr />
+          <input id="newTitle" class="input" placeholder="新建笔记标题" />
+          <textarea id="newContent" class="textarea" placeholder="新建笔记内容（可留空使用AI帮我写）"></textarea>
+          <div class="row">
+            <button id="saveNewNote" class="btn">保存为新笔记</button>
+            <button id="aiWrite" class="btn">AI帮我写</button>
+          </div>
+          <div id="aiDraft" class="bubble-ai hidden"></div>
+        </div>
+        <div>
+          <div class="section-title">笔记内容</div>
+          <input id="noteTitle" class="input" placeholder="标题" />
+          <textarea id="noteContent" class="textarea" placeholder="正文（大号字体易读）"></textarea>
+          <div class="row">
+            <button id="saveNote" class="btn">保存修改</button>
+            <button id="summarize" class="btn">一键总结</button>
+          </div>
+          <div id="summary" class="bubble-ai hidden"></div>
+          <div class="section-title">智能分类建议</div>
+          <div id="catSuggest" class="item">（AI正在分析或暂无建议）</div>
+          <select id="moveSelect" class="input"></select>
+          <button id="moveConfirm" class="btn">确认移动到此分类</button>
+        </div>
+      </div>
+    </div>
+
+    <div id="view-todo" class="hidden">
+      <div class="section-title">待办事项</div>
+      <div class="row">
+        <input id="newTodo" class="input" placeholder="请输入新的任务" />
+        <button id="addTodo" class="btn">添加任务</button>
+        <button id="clearCompleted" class="btn">清空已完成</button>
+      </div>
+      <div id="todoList" style="margin-top:12px"></div>
+    </div>
+
+    <div id="view-chat" class="hidden">
+      <div class="section-title">与AI聊天</div>
+      <button id="clearChat" class="btn">清空聊天记录</button>
+      <div id="chatList" class="chat"></div>
+      <div class="row">
+        <input id="chatInput" class="input" placeholder="请输入要发送的消息" />
+        <button id="sendChat" class="btn">发送</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- 番茄钟全屏窗口 -->
+  <div id="holo" class="holo-bg hidden">
+    <div class="holo-center">
+      <div id="phase" style="font-size:48px;font-weight:800;color:var(--accent);">当前阶段：专注</div>
+      <div id="holoTime" class="holo-time">25:00</div>
+      <div class="holo-controls">
+        <button id="startTimer" class="btn">开始</button>
+        <button id="pauseTimer" class="btn">暂停</button>
+        <button id="resetTimer" class="btn">重置</button>
+        <button id="closeHolo" class="btn">关闭</button>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    // ========================= 基础存储 =========================
+    const store = {
+      get(key, def){ try { return JSON.parse(localStorage.getItem(key)) ?? def; } catch(e){ return def } },
+      set(key, val){ localStorage.setItem(key, JSON.stringify(val)); }
+    };
+
+    // 初始数据结构
+    const state = {
+      categories: store.get('categories', [{id:1, name:'未分类'}]),
+      notes: store.get('notes', []), // {id, title, content, categoryId, ts}
+      todos: store.get('todos', []), // {id, content, completed}
+      chats: store.get('chats', []), // {role:'user'|'assistant', content}
+      selectedCategoryId: store.get('selectedCategoryId', 1),
+      selectedNoteId: store.get('selectedNoteId', null),
+      apiKey: store.get('apiKey', ''),
+      model: store.get('model', 'gpt-4o-mini')
+    };
+
+    // UI元素
+    const el = id => document.getElementById(id);
+    const render = () => { renderTabs(); renderCategories(); renderNotes(); renderNoteEditor(); renderTodos(); renderChat(); renderModelAndKey(); };
+
+    // ========================= 顶部设置 =========================
+    function renderModelAndKey(){ el('apiKey').value = state.apiKey; el('model').value = state.model; }
+    el('apiKey').addEventListener('input', e => { state.apiKey = e.target.value; store.set('apiKey', state.apiKey); });
+    el('model').addEventListener('change', e => { state.model = e.target.value; store.set('model', state.model); });
+
+    // ========================= 标签页切换 =========================
+    function renderTabs(){
+      const tabs = ['notes','todo','chat'];
+      tabs.forEach(t => el('tab-'+t).classList.remove('active'));
+      tabs.forEach(t => el('view-'+t).classList.add('hidden'));
+      el('tab-notes').classList.add('active'); el('view-notes').classList.remove('hidden');
+      el('tab-notes').onclick = ()=>{ document.querySelectorAll('.tab').forEach(x=>x.classList.remove('active')); el('tab-notes').classList.add('active'); show('notes'); };
+      el('tab-todo').onclick = ()=>{ document.querySelectorAll('.tab').forEach(x=>x.classList.remove('active')); el('tab-todo').classList.add('active'); show('todo'); };
+      el('tab-chat').onclick = ()=>{ document.querySelectorAll('.tab').forEach(x=>x.classList.remove('active')); el('tab-chat').classList.add('active'); show('chat'); };
+    }
+    function show(name){ ['notes','todo','chat'].forEach(n => el('view-'+n).classList.add('hidden')); el('view-'+name).classList.remove('hidden'); }
+
+    // ========================= 分类与笔记列表 =========================
+    function renderCategories(){
+      const sel = el('categorySelect'); sel.innerHTML = '';
+      state.categories.forEach(c => { const o=document.createElement('option'); o.value=c.id; o.textContent=c.name; sel.appendChild(o); });
+      sel.value = state.selectedCategoryId;
+      sel.onchange = e => { state.selectedCategoryId = Number(e.target.value); store.set('selectedCategoryId', state.selectedCategoryId); renderNotes(); renderNoteEditor(); };
+      el('addCategory').onclick = ()=>{
+        const name = el('newCategory').value.trim(); if(!name) return;
+        if(state.categories.find(c=>c.name===name)) return alert('分类已存在');
+        const id = Math.max(0, ...state.categories.map(c=>c.id)) + 1;
+        state.categories.push({id, name}); store.set('categories', state.categories); el('newCategory').value='';
+        renderCategories(); renderNoteEditor();
+      };
+    }
+    function renderNotes(){
+      const box = el('notesList'); box.innerHTML = '';
+      state.notes.filter(n=>n.categoryId===state.selectedCategoryId).sort((a,b)=>b.ts-a.ts).forEach(n=>{
+        const b=document.createElement('button'); b.className='btn'; b.textContent = '打开：'+n.title; b.onclick=()=>{state.selectedNoteId=n.id; store.set('selectedNoteId', n.id); renderNoteEditor();}; box.appendChild(b);
+      });
+      el('saveNewNote').onclick = ()=>{
+        const title = el('newTitle').value.trim() || '未命名笔记';
+        const content = el('newContent').value;
+        const id = Math.max(0, ...state.notes.map(x=>x.id)) + 1;
+        state.notes.push({id, title, content, categoryId: state.selectedCategoryId, ts: Date.now()}); store.set('notes', state.notes);
+        state.selectedNoteId = id; store.set('selectedNoteId', id);
+        suggestCategoryAI(title, content).then(s=>{ el('catSuggest').textContent = s || '（AI正在分析或暂无建议）'; });
+        el('newTitle').value=''; el('newContent').value=''; renderNotes(); renderNoteEditor();
+      };
+      el('aiWrite').onclick = async ()=>{
+        const prompt = (el('newTitle').value+'\n'+el('newContent').value).trim();
+        const text = await writeAI(prompt); el('aiDraft').classList.remove('hidden'); el('aiDraft').textContent = text;
+      };
+    }
+
+    function renderNoteEditor(){
+      const note = state.notes.find(n=>n.id===state.selectedNoteId);
+      el('noteTitle').value = note? note.title : '';
+      el('noteContent').value = note? note.content : '';
+      const moveSel = el('moveSelect'); moveSel.innerHTML=''; state.categories.forEach(c=>{ const o=document.createElement('option'); o.value=c.id; o.textContent=c.name; moveSel.appendChild(o); });
+      el('saveNote').onclick = ()=>{
+        if(!note) return alert('请先选择笔记');
+        note.title = el('noteTitle').value.trim() || '未命名笔记';
+        note.content = el('noteContent').value; note.ts = Date.now(); store.set('notes', state.notes);
+        alert('已保存'); suggestCategoryAI(note.title, note.content).then(s=>{ el('catSuggest').textContent = s || '（AI正在分析或暂无建议）'; });
+        renderNotes();
+      };
+      el('summarize').onclick = async ()=>{
+        if(!note) return alert('请先选择笔记'); const s = await summarizeAI(note.content); el('summary').classList.remove('hidden'); el('summary').textContent = s;
+      };
+      el('moveConfirm').onclick = ()=>{
+        if(!note) return; const cid = Number(el('moveSelect').value); note.categoryId = cid; store.set('notes', state.notes); alert('已移动'); renderNotes();
+      };
+    }
+
+    // ========================= 待办事项 =========================
+    function renderTodos(){
+      const box = el('todoList'); box.innerHTML = '';
+      state.todos.forEach(t=>{
+        const row = document.createElement('div'); row.className='row';
+        const content = document.createElement('div'); content.className='item'+(t.completed?' strike':''); content.textContent=t.content; row.appendChild(content);
+        const done = document.createElement('button'); done.className='btn'; done.textContent = t.completed? '取消完成' : '标记完成'; done.onclick=()=>{ t.completed=!t.completed; store.set('todos', state.todos); renderTodos(); }; row.appendChild(done);
+        const del = document.createElement('button'); del.className='btn'; del.textContent='删除'; del.onclick=()=>{ state.todos = state.todos.filter(x=>x.id!==t.id); store.set('todos', state.todos); renderTodos(); }; row.appendChild(del);
+        box.appendChild(row);
+      });
+      el('addTodo').onclick = ()=>{ const v = el('newTodo').value.trim(); if(!v) return; const id = Math.max(0, ...state.todos.map(x=>x.id))+1; state.todos.unshift({id, content:v, completed:false}); store.set('todos', state.todos); el('newTodo').value=''; renderTodos(); };
+      el('clearCompleted').onclick = ()=>{ state.todos = state.todos.filter(x=>!x.completed); store.set('todos', state.todos); renderTodos(); };
+    }
+
+    // ========================= 聊天 =========================
+    function renderChat(){
+      const box = el('chatList'); box.innerHTML='';
+      state.chats.forEach(m=>{ const b=document.createElement('div'); b.className = m.role==='user' ? 'bubble-user' : 'bubble-ai'; b.textContent = m.content; box.appendChild(b); });
+    }
+    el('clearChat').onclick = ()=>{ state.chats = []; store.set('chats', state.chats); renderChat(); };
+    el('sendChat').onclick = async ()=>{
+      const msg = el('chatInput').value.trim(); if(!msg) return;
+      state.chats.push({role:'user', content: msg}); store.set('chats', state.chats); renderChat(); el('chatInput').value='';
+      const reply = await chatAI([...state.chats.slice(-20), {role:'user', content: msg}]);
+      state.chats.push({role:'assistant', content: reply}); store.set('chats', state.chats); renderChat();
+    };
+
+    // ========================= 智能问答（检索全部笔记） =========================
+    el('askNotes').onclick = async ()=>{
+      const q = el('notesQuestion').value.trim(); if(!q) return;
+      const notes = state.notes.map(n=>({title:n.title, content:n.content}));
+      const ans = await askOverNotesAI(q, notes); const box = el('notesAnswer'); box.classList.remove('hidden'); box.textContent = ans;
+    };
+
+    // ========================= 番茄钟 =========================
+    let focusSec = 25*60, restSec = 5*60, running=false, inRest=false, timer=null, remaining=focusSec;
+    const updateTime = ()=>{ el('holoTime').textContent = format(remaining); el('phase').textContent = '当前阶段：'+ (inRest?'休息':'专注'); };
+    const format = sec => `${String(Math.floor(sec/60)).padStart(2,'0')}:${String(sec%60).padStart(2,'0')}`;
+    function tick(){ if(!running) return; remaining = Math.max(0, remaining-1); updateTime(); if(remaining===0){ notify(); if(!inRest){ inRest=true; running=false; remaining=restSec; alert('专注结束，休息5分钟！'); } else { alert('休息结束，继续加油！'); inRest=false; running=false; remaining=focusSec; } } }
+    function notify(){ try { const ctx = new (window.AudioContext||window.webkitAudioContext)(); const o=ctx.createOscillator(); const g=ctx.createGain(); o.frequency.value=600; o.connect(g); g.connect(ctx.destination); o.start(); setTimeout(()=>{o.stop(); ctx.close();}, 800); } catch(e){} }
+    el('focusBtn').onclick = ()=>{ el('holo').classList.remove('hidden'); running=false; inRest=false; remaining=focusSec; updateTime(); };
+    el('startTimer').onclick = ()=>{ if(timer) clearInterval(timer); running=true; timer=setInterval(tick, 1000); };
+    el('pauseTimer').onclick = ()=>{ running=false; };
+    el('resetTimer').onclick = ()=>{ running=false; inRest=false; remaining=focusSec; updateTime(); };
+    el('closeHolo').onclick = ()=>{ running=false; if(timer) clearInterval(timer); el('holo').classList.add('hidden'); };
+
+    // ========================= AI调用（通用） =========================
+    async function callLLM(messages){
+      const key = state.apiKey.trim(); if(!key){ alert('请先在顶部输入您的API Key'); throw new Error('no-key'); }
+      const url = 'https://api.openai.com/v1/chat/completions';
+      const body = { model: state.model, messages, temperature: 0.2 };
+      const res = await fetch(url, { method:'POST', headers: { 'Content-Type':'application/json', 'Authorization': 'Bearer '+key }, body: JSON.stringify(body) });
+      if(!res.ok){ const t = await res.text(); throw new Error(t); }
+      const data = await res.json(); return data.choices?.[0]?.message?.content?.trim() || 'AI服务暂时不可用';
+    }
+    async function askOverNotesAI(question, notes){
+      const ctx = notes.slice(0, 20).map(n=>`标题：${n.title}\n内容：${n.content}`).join('\n\n') || '(暂无笔记内容)';
+      const msgs = [
+        {role:'system', content:'你是一名严谨的生活助理。基于提供的笔记原文，准确回答用户问题。若无法从笔记中找到答案，请明确告知“没有找到相关记录”。'},
+        {role:'user', content:`我的问题：${question}\n\n以下是全部笔记原文供参考：\n${ctx}`}
+      ];
+      return await callLLM(msgs);
+    }
+    async function summarizeAI(text){
+      const msgs = [
+        {role:'system', content:'你是一名温和且简洁的总结助手，请将内容浓缩为要点清晰的中文摘要，保留关键事实与数字。'},
+        {role:'user', content: text }
+      ];
+      return await callLLM(msgs);
+    }
+    async function writeAI(prompt){
+      const msgs = [
+        {role:'system', content:'你是一名中文写作助手，请根据用户意图创作一段清晰易读的内容，适合老年人阅读。'},
+        {role:'user', content: prompt }
+      ];
+      return await callLLM(msgs);
+    }
+    async function suggestCategoryAI(title, content){
+      const msgs = [
+        {role:'system', content:'你是一名分类助手，请给出一个最贴切的中文分类名（如“健康记录”、“家务安排”、“重要提醒”等），只返回分类名本身。'},
+        {role:'user', content:`标题：${title}\n内容：${content}`}
+      ];
+      try {
+        const cat = await callLLM(msgs);
+        el('catSuggest').textContent = cat;
+        // 若分类不存在，自动添加一个建议项供移动选择
+        if(cat && !state.categories.find(c=>c.name===cat)){
+          const id = Math.max(0, ...state.categories.map(c=>c.id)) + 1;
+          state.categories.push({id, name:cat}); store.set('categories', state.categories); renderCategories(); renderNoteEditor();
+        }
+        return cat;
+      } catch(e){ return '' }
+    }
+
+    // ========================= 智能问答按钮事件 =========================
+    // 已在上方绑定
+
+    // 首次渲染
+    render();
+  </script>
+</body>
+</html>
+
